@@ -68,7 +68,7 @@ class ApiExceptionHandler extends ExceptionHandler
         }
 
         if ($exception instanceof NotFoundHttpException) {
-            return $this->notFoundResponse('The requested resource was not found');
+            return $this->notFoundResponse(__('messages.resource_not_found'));
         }
 
         if ($exception instanceof MethodNotAllowedHttpException) {

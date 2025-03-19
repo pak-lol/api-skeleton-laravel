@@ -29,10 +29,9 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
 
     // jwt.auth middleware /user prefix
     Route::middleware('jwt.auth')->prefix('user')->name('user.')->group(function () {
-        Route::get('list', [UserController::class, 'index'])->name('list');
-        Route::get('show/{id}', [UserController::class, 'show'])->name('show');
-        Route::get('me', [UserController::class, 'me'])->name('me');
-        Route::get('update', [UserController::class, 'update'])->name('update');
+        Route::get('/{id}', [UserController::class, 'show'])->name('show');
+        Route::get('/', [UserController::class, 'me'])->name('me');
+        Route::put('update', [UserController::class, 'update'])->name('update');
     });
 
     // jwt.auth middleware /language prefix
@@ -43,9 +42,10 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     // jwt.auth role:admin middleware /admin
     Route::middleware(['jwt.auth', 'role:admin'])->prefix('admin')->name('admin.')->group(function () {
         Route::prefix('user')->name('users.')->group(function () {
-            Route::get('list', [AdminController::class, 'index'])->name('list');
-            Route::get('delete/{id}', [AdminController::class, 'destroy'])->name('delete');
-            Route::get('online', [AdminController::class, 'online_list'])->name('online_list');
+            Route::get('/list', [AdminController::class, 'index'])->name('list');
+            Route::delete('/delete/{id}', [AdminController::class, 'destroy'])->name('delete');
+            Route::get('/view/{id}', [AdminController::class, 'show'])->name('show');
+            Route::get('/online', [AdminController::class, 'online_list'])->name('online_list');
         });
     });
 

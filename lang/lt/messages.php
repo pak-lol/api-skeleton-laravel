@@ -11,5 +11,7 @@ return [
     'user_deleted' => 'Vartotojas ištrintas',
     'auth_failed' => 'Neteisingi prisijungimo duomenys',
     'too_many_attempts' => 'Per daug prisijungimo bandymų. Prašome bandyti dar kartą po :minutes minučių',
-    'user_updated_successfully' => 'Vartotojas atnaujintas sekmingai'
+    'user_updated_successfully' => 'Vartotojas atnaujintas sekmingai',
+    'validation_failed' => 'Validacijos klaida',
+    'resource_not_found' => 'Resursas nerastas'
 ];

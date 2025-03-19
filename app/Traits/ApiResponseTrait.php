@@ -57,8 +57,9 @@ trait ApiResponseTrait
      * @param string $message
      * @return \Illuminate\Http\JsonResponse
      */
-    protected function validationErrorResponse(array $errors, string $message = 'Validation failed')
+    protected function validationErrorResponse(array $errors, string $message = null)
     {
+        $message = $message ?? __('messages.validation_failed');
         return $this->errorResponse($message, $errors, 422);
     }
 
@@ -68,8 +69,9 @@ trait ApiResponseTrait
      * @param string $message
      * @return \Illuminate\Http\JsonResponse
      */
-    protected function notFoundResponse(string $message = 'Resource not found')
+    protected function notFoundResponse(string $message = null)
     {
+        $message = $message ?? __('messages.resource_not_found');
         return $this->errorResponse($message, null, 404);
     }
 

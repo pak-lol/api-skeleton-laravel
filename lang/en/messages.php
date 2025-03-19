@@ -11,5 +11,7 @@ return [
     'user_deleted' => 'User deleted',
     'auth_failed' => 'Invalid credentials',
     'too_many_attempts' => 'Too many login attempts. Please try again in :minutes minutes',
-    'user_updated_successfully' => 'User updated successfully'
+    'user_updated_successfully' => 'User updated successfully',
+    'validation_failed' => 'Validation error',
+    'resource_not_found' => 'Resource not found',
 ];

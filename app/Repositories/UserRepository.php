@@ -15,9 +15,14 @@ class UserRepository implements UserRepositoryInterface
         return User::all();
     }
 
-    public function find(int $id): ?User
+    public function find($id): ?User
     {
-        return User::find($id);
+        // Ensure we have a valid integer ID
+        if ($id === null || !is_numeric($id)) {
+            return null;
+        }
+
+        return User::find((int)$id);
     }
 
     public function create(array $data): User

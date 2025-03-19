@@ -111,4 +111,22 @@ class AdminController extends Controller
             'users' => $userData
         ]);
     }
+
+    public function show($id)
+    {
+        // Ensure $id is not null and is numeric
+        if ($id === null || !is_numeric($id)) {
+            return $this->notFoundResponse('User ID is invalid or missing');
+        }
+
+        $user = $this->userRepository->find((int)$id);
+
+        if (!$user) {
+            return $this->notFoundResponse('User not found');
+        }
+
+        return $this->successResponse($user);
+    }
+
+    // de
 }
