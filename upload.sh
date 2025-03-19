@@ -29,9 +29,27 @@ git add .
 echo -e "${BLUE}Committing changes with message: ${COMMIT_MESSAGE}${NC}"
 git commit -m "$COMMIT_MESSAGE"
 
-# Push to GitHub
+# Try to push to GitHub
 echo -e "${BLUE}Pushing to GitHub...${NC}"
 git push -u origin master
+
+# If push fails due to diverged branches, pull and then push
+if [ $? -ne 0 ]; then
+  echo -e "${YELLOW}Push failed. Attempting to pull changes first...${NC}"
+
+  # Stash any uncommitted changes (just in case)
+  git stash
+
+  # Pull with rebase to avoid merge commit
+  git pull --rebase origin master
+
+  # Apply stashed changes (if any)
+  git stash pop 2>/dev/null || true
+
+  # Try pushing again
+  echo -e "${BLUE}Pushing to GitHub after pull...${NC}"
+  git push -u origin master
+fi
 
 # Check if push was successful
 if [ $? -eq 0 ]; then
