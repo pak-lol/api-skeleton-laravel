@@ -6,11 +6,13 @@ use App\Traits\ApiResponseTrait;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 use Throwable;
 
@@ -42,6 +44,12 @@ class ApiExceptionHandler extends ExceptionHandler
      */
     private function handleApiException(Throwable $exception)
     {
+        // Handle rate limiting exceptions
+        if ($exception instanceof ThrottleRequestsException ||
+            $exception instanceof TooManyRequestsHttpException) {
+            return $this->rateLimitExceededResponse($exception);
+        }
+
         // First, check for JWT token error messages to provide a cleaner response
         if ($exception instanceof UnauthorizedHttpException) {
             $message = $exception->getMessage();
@@ -96,5 +104,56 @@ class ApiExceptionHandler extends ExceptionHandler
             'file' => $exception->getFile(),
             'line' => $exception->getLine(),
         ]);
+    }
+
+    /**
+     * Generate a beautiful response for rate limit exceeded errors
+     *
+     * @param \Throwable $exception
+     * @return \Illuminate\Http\JsonResponse
+     */
+    private function rateLimitExceededResponse(Throwable $exception)
+    {
+        // Get retry after value if available
+        $retryAfter = 60; // Default fallback value
+
+        if (method_exists($exception, 'getHeaders')) {
+            $headers = $exception->getHeaders();
+            $retryAfter = $headers['Retry-After'] ?? $retryAfter;
+        }
+
+        // Calculate when the user can try again
+        $retryDate = now()->addSeconds($retryAfter);
+
+        // Format the date in a user-friendly way
+        $retryDateFormatted = $retryDate->diffForHumans();
+
+        // Custom, user-friendly error message
+        $message = __('messages.rate_limit_exceeded', [
+            'time' => $retryDateFormatted
+        ]) ?? "API rate limit exceeded. Please try again {$retryDateFormatted}.";
+
+        // Build a structured response
+        $data = [
+            'success' => false,
+            'message' => $message,
+            'errors' => [
+                'rate_limit' => [
+                    'retry_after_seconds' => (int) $retryAfter,
+                    'retry_after_time' => $retryDateFormatted,
+                    'retry_after_timestamp' => $retryDate->toIso8601String(),
+                ]
+            ],
+            'status_code' => 429,
+            'timestamp' => now()->toIso8601String()
+        ];
+
+        // Return with proper headers
+        $headers = [
+            'Retry-After' => $retryAfter,
+            'X-RateLimit-Reset' => $retryDate->getTimestamp(),
+        ];
+
+        return response()->json($data, 429, $headers);
     }
 }

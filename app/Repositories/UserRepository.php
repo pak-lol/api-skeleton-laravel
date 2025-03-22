@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Collection;
 use App\Repositories\Interfaces\UserRepositoryInterface;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Collection as SupportCollection;
 
 class UserRepository implements UserRepositoryInterface
 {
@@ -51,11 +53,21 @@ class UserRepository implements UserRepositoryInterface
     /**
      * Get public user data (without sensitive information)
      *
-     * @param int $id
+     * @param int|string $id
      * @return array|null
      */
-    public function getPublicUserData(int $id): ?array
+    public function getPublicUserData($id): ?array
     {
+        // Convert string to integer if it's numeric
+        if (is_string($id) && is_numeric($id)) {
+            $id = (int)$id;
+        }
+
+        // If after conversion it's not an integer, return null
+        if (!is_int($id)) {
+            return null;
+        }
+
         $user = $this->find($id);
 
         if (!$user) {
@@ -94,7 +106,102 @@ class UserRepository implements UserRepositoryInterface
      */
     public function paginate(int $perPage = 15, string $sortBy = 'id', string $sortDir = 'asc'): LengthAwarePaginator
     {
-        return User::orderBy($sortBy, $sortDir)->paginate($perPage);
+        $users = User::orderBy($sortBy, $sortDir)->paginate($perPage);
+
+        // Transform the items to include only public data
+        $publicItems = $this->transformUsersToPublic($users->items());
+
+        // Create a new paginator with the transformed items
+        return new \Illuminate\Pagination\LengthAwarePaginator(
+            $publicItems,
+            $users->total(),
+            $users->perPage(),
+            $users->currentPage(),
+            [
+                'path' => \Illuminate\Pagination\Paginator::resolveCurrentPath(),
+                'pageName' => 'page',
+            ]
+        );
+    }
+
+    /**
+     * Search users with pagination, sorting and filtering
+     * Returns only public data for each user
+     *
+     * @param string|null $searchTerm  Search term to filter users
+     * @param array $filters           Additional filters (e.g. ['role' => 'admin'])
+     * @param int $perPage             Number of results per page
+     * @param string $sortBy           Field to sort by
+     * @param string $sortDir          Sort direction (asc or desc)
+     * @return LengthAwarePaginator
+     */
+    public function searchUsers(?string $searchTerm = null, array $filters = [], int $perPage = 15, string $sortBy = 'id', string $sortDir = 'asc'): LengthAwarePaginator
+    {
+        try {
+            $query = User::query();
+
+            // Apply search term if provided
+            if ($searchTerm) {
+                $query->where(function($q) use ($searchTerm) {
+                    $q->where('username', 'LIKE', "%{$searchTerm}%")
+                        ->orWhere('email', 'LIKE', "%{$searchTerm}%")
+                        ->orWhere('name', 'LIKE', "%{$searchTerm}%");
+                });
+            }
+
+            // Apply additional filters
+            foreach ($filters as $field => $value) {
+                if ($value === null) continue;
+
+                if (is_array($value)) {
+                    $query->whereIn($field, $value);
+                } else {
+                    $query->where($field, $value);
+                }
+            }
+
+            // Apply sorting
+            $query->orderBy($sortBy, $sortDir);
+
+            // Get paginated results
+            $users = $query->paginate($perPage);
+
+            // Transform the items to include only public data
+            $publicItems = $this->transformUsersToPublic($users->items());
+
+            // Create a new paginator with the transformed items
+            return new \Illuminate\Pagination\LengthAwarePaginator(
+                $publicItems,
+                $users->total(),
+                $users->perPage(),
+                $users->currentPage(),
+                [
+                    'path' => \Illuminate\Pagination\Paginator::resolveCurrentPath(),
+                    'pageName' => 'page',
+                ]
+            );
+        } catch (\Exception $e) {
+            Log::error('Error searching users: ' . $e->getMessage());
+            // Return empty paginator
+            return new \Illuminate\Pagination\LengthAwarePaginator([], 0, $perPage, 1);
+        }
+    }
+
+    /**
+     * Transform a collection of user models to only include public data
+     *
+     * @param array $users
+     * @return array
+     */
+    private function transformUsersToPublic(array $users): array
+    {
+        $publicUsers = [];
+
+        foreach ($users as $user) {
+            $publicUsers[] = $this->getPublicUserData($user->id);
+        }
+
+        return $publicUsers;
     }
 
     /**

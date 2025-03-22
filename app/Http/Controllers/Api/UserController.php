@@ -3,121 +3,210 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\LanguageRequest;
+use App\Http\Requests\UserRequest;
 use App\Repositories\Interfaces\UserRepositoryInterface;
 use App\Traits\ApiResponseTrait;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
     use ApiResponseTrait;
-    private $userRepository;
-    private $supportedLanguages = ['en', 'lt'];
 
+    /**
+     * @var UserRepositoryInterface
+     */
+    private $userRepository;
+
+    /**
+     * UserController constructor
+     *
+     * @param UserRepositoryInterface $userRepository
+     */
     public function __construct(UserRepositoryInterface $userRepository)
     {
         $this->userRepository = $userRepository;
     }
 
-    public function index()
+    /**
+     * Get list of all users with optional search parameters
+     *
+     * @param UserRequest $request
+     * @return JsonResponse
+     */
+    public function index(UserRequest $request): JsonResponse
     {
-        $users = $this->userRepository->all();
-        return $this->successResponse($users);
-    }
-
-    public function show($id)
-    {
-        $userData = $this->userRepository->getPublicUserData($id);
-
-        if (!$userData) {
-            return $this->errorResponse(__('messages.user_not_found'), null, 404);
-        }
-
-        return $this->successResponse($userData);
-    }
-
-    // change language /en or /lt in language table
-    public function updateLanguage(Request $request, $locale)
-    {
-        // Validate the language
-        if (!in_array($locale, $this->supportedLanguages)) {
-            return $this->errorResponse(__('messages.unsupported_language'));
-        }
-
         try {
-            // For JWT, use the auth guard explicitly
-            $user = auth('api')->user();
+            // Get search parameters and filters
+            $searchParams = $request->searchParams();
+            $filters = $request->filters();
 
+            // Call repository search method
+            $users = $this->userRepository->searchUsers(
+                $searchParams['searchTerm'],
+                $filters,
+                $searchParams['perPage'],
+                $searchParams['sortBy'],
+                $searchParams['sortDir']
+            );
+
+            return $this->respondWith($users);
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->errors());
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch users: ' . $e->getMessage());
+            return $this->errorResponse(__('messages.server_error'), null, 500);
+        }
+    }
+
+    /**
+     * Search users with advanced filtering
+     *
+     * @param UserRequest $request
+     * @return JsonResponse
+     */
+    public function search(UserRequest $request): JsonResponse
+    {
+        try {
+            // Get search parameters and filters
+            $searchParams = $request->searchParams();
+            $filters = $request->filters();
+
+            // Call repository search method
+            $users = $this->userRepository->searchUsers(
+                $searchParams['searchTerm'],
+                $filters,
+                $searchParams['perPage'],
+                $searchParams['sortBy'],
+                $searchParams['sortDir']
+            );
+
+            return $this->respondWith(
+                $users,
+                __('messages.users_found', ['count' => $users->total()])
+            );
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->errors());
+        } catch (\Exception $e) {
+            Log::error('Failed to search users: ' . $e->getMessage());
+            return $this->errorResponse(__('messages.server_error'), null, 500);
+        }
+    }
+
+    /**
+     * Get public user data by ID
+     *
+     * @param mixed $id
+     * @return JsonResponse
+     */
+    public function show($id): JsonResponse
+    {
+        try {
+            $userData = $this->userRepository->getPublicUserData($id);
+
+            if (!$userData) {
+                return $this->errorResponse(__('messages.user_not_found'), null, 404);
+            }
+
+            return $this->successResponse($userData);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch user data: ' . $e->getMessage());
+            return $this->errorResponse(__('messages.server_error'), null, 500);
+        }
+    }
+
+    /**
+     * Update user language preference
+     *
+     * @param LanguageRequest $request
+     * @return JsonResponse
+     */
+    public function updateLanguage(LanguageRequest $request): JsonResponse
+    {
+        try {
+            $user = auth('api')->user();
             if (!$user) {
                 return $this->errorResponse(__('messages.unauthorized'), null, 401);
             }
+
+            $locale = $request->validated()['locale'];
 
             // Update the locale
             $user->locale = $locale;
             $user->save();
 
-            // Also set the app locale for the current request
+            // Set the app locale for the current request
             app()->setLocale($locale);
 
             return $this->successResponse([
                 'locale' => $locale,
+                'message' => __('messages.language_updated_successfully')
             ]);
         } catch (\Exception $e) {
-            return $this->errorResponse($e->getMessage(), null, 500);
+            Log::error('Failed to update user language: ' . $e->getMessage());
+            return $this->errorResponse(__('messages.server_error'), null, 500);
         }
     }
 
-    public function me(){
-        $user = auth('api')->user();
-        return $this->successResponse(compact('user'));
-    }
-
     /**
-     * Update user information
+     * Get current authenticated user's data
      *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
-    public function update(Request $request)
+    public function me(): JsonResponse
     {
         try {
-            // Get authenticated user
             $user = auth('api')->user();
 
             if (!$user) {
                 return $this->errorResponse(__('messages.unauthorized'), null, 401);
             }
 
-            // Validate request data
-            $validator = Validator::make($request->all(), [
-                'email' => 'sometimes|email|unique:users,email,' . $user->id,
-                'password' => 'sometimes|min:8|confirmed',
-                'username' => 'sometimes|string|min:3|max:14|unique:users,username,' . $user->id . '|regex:/^[a-zA-Z0-9]+$/',
-                'locale' => 'sometimes|in:' . implode(',', $this->supportedLanguages),
-                // Add any other fields you want to allow updating
-            ]);
+            return $this->successResponse(['user' => $user]);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch current user data: ' . $e->getMessage());
+            return $this->errorResponse(__('messages.server_error'), null, 500);
+        }
+    }
 
-            if ($validator->fails()) {
-                return $this->errorResponse(__('messages.validation_error'), $validator->errors(), 422);
-            }
+    /**
+     * Update authenticated user's information
+     *
+     * @param UserRequest $request
+     * @return JsonResponse
+     */
+    public function update(UserRequest $request): JsonResponse
+    {
+        try {
+            $userId = auth('api')->id();
+            $validatedData = $request->validated();
 
             // Update user
-            $result = $this->userRepository->updateUser($user->id, $request->all());
+            $result = $this->userRepository->updateUser($userId, $validatedData);
 
             if (!$result) {
                 return $this->errorResponse(__('messages.update_failed'), null, 500);
             }
 
             // Get fresh user data
-            $updatedUser = $this->userRepository->find($user->id);
+            $updatedUser = $this->userRepository->find($userId);
 
             return $this->successResponse([
                 'message' => __('messages.user_updated_successfully'),
                 'user' => $updatedUser
             ]);
-
+        } catch (ValidationException $e) {
+            return $this->errorResponse(
+                __('messages.validation_error'),
+                $e->errors(),
+                422
+            );
         } catch (\Exception $e) {
-            return $this->errorResponse($e->getMessage(), null, 500);
+            Log::error('Failed to update user: ' . $e->getMessage());
+            return $this->errorResponse(__('messages.server_error'), null, 500);
         }
     }
+
 }
