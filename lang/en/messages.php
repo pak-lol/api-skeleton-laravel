@@ -14,5 +14,6 @@ return [
     'user_updated_successfully' => 'User information updated',
     'validation_failed' => 'Validation error – please check your input',
     'resource_not_found' => 'The requested resource could not be found',
-    'rate_limit_exceeded' => 'Too many requests. Please try again later'
+    'rate_limit_exceeded' => 'Too many requests. Please try again later',
+    'language_updated_successfully' => 'Language updated successfully'
 ];

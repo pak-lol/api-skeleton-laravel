@@ -6,6 +6,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\SetUserLocale;
 use App\Exceptions\ApiExceptionHandler;
 use App\Http\Middleware\UserMiddleware;
+use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -17,8 +18,15 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // Register middleware aliases
         $middleware->alias([
-            'jwt.auth' => \App\Http\Middleware\JwtMiddleware::class,
+            'auth.sanctum' => \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+            'ability' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
+            'abilities' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+        ]);
+
+        // Add Sanctum middleware to api group
+        $middleware->prependToGroup('api', [
+            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
         ]);
 
         // x-language header middleware
@@ -27,8 +35,6 @@ return Application::configure(basePath: dirname(__DIR__))
             UserMiddleware::class
         ]);
 
-        // Make sure the built-in JWT middleware is removed if it's being registered elsewhere
-        $middleware->remove(\Tymon\JWTAuth\Http\Middleware\Authenticate::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // Register your custom exception handler for API routes
@@ -37,4 +43,6 @@ return Application::configure(basePath: dirname(__DIR__))
                 return app(ApiExceptionHandler::class)->render($request, $e);
             }
         });
+
+        Integration::handles($exceptions);
     })->create();

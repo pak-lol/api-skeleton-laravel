@@ -8,6 +8,7 @@ use App\Http\Requests\UserRequest;
 use App\Repositories\Interfaces\UserRepositoryInterface;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -120,18 +121,24 @@ class UserController extends Controller
     /**
      * Update user language preference
      *
-     * @param LanguageRequest $request
+     * @param string $locale The locale to set
      * @return JsonResponse
      */
-    public function updateLanguage(LanguageRequest $request): JsonResponse
+    public function updateLanguage($locale): JsonResponse
     {
         try {
-            $user = auth('api')->user();
+            // Get the authenticated user
+            $user = Auth::user();
+
             if (!$user) {
                 return $this->errorResponse(__('messages.unauthorized'), null, 401);
             }
 
-            $locale = $request->validated()['locale'];
+            // Validate locale
+            $allowedLocales = ['en', 'lt']; // Add your supported locales
+            if (!in_array($locale, $allowedLocales)) {
+                return $this->errorResponse(__('messages.invalid_locale'), null, 422);
+            }
 
             // Update the locale
             $user->locale = $locale;
@@ -158,7 +165,7 @@ class UserController extends Controller
     public function me(): JsonResponse
     {
         try {
-            $user = auth('api')->user();
+            $user = Auth::user();
 
             if (!$user) {
                 return $this->errorResponse(__('messages.unauthorized'), null, 401);
@@ -180,7 +187,7 @@ class UserController extends Controller
     public function update(UserRequest $request): JsonResponse
     {
         try {
-            $userId = auth('api')->id();
+            $userId = Auth::id();
             $validatedData = $request->validated();
 
             // Update user
@@ -208,5 +215,4 @@ class UserController extends Controller
             return $this->errorResponse(__('messages.server_error'), null, 500);
         }
     }
-
 }

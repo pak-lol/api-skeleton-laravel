@@ -9,6 +9,7 @@ use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\Exceptions\MissingAbilityException;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -50,17 +51,16 @@ class ApiExceptionHandler extends ExceptionHandler
             return $this->rateLimitExceededResponse($exception);
         }
 
-        // First, check for JWT token error messages to provide a cleaner response
-        if ($exception instanceof UnauthorizedHttpException) {
-            $message = $exception->getMessage();
+        // Handle Sanctum's missing ability exception
+        if ($exception instanceof MissingAbilityException) {
+            return $this->forbiddenResponse('You do not have the required permissions for this action.');
+        }
 
-            // Check if error is a token error based on common patterns
-            if (str_contains($message, 'token')) {
-                return $this->unauthorizedResponse('Invalid authentication token');
-            }
-
-            // Handle other unauthorized errors
-            return $this->unauthorizedResponse();
+        // Handle authentication exceptions
+        if ($exception instanceof UnauthorizedHttpException ||
+            $exception instanceof AuthenticationException) {
+            // More generic authentication error message that works for both JWT and Sanctum
+            return $this->unauthorizedResponse(__('messages.unauthenticated'));
         }
 
         if ($exception instanceof ValidationException) {
@@ -81,10 +81,6 @@ class ApiExceptionHandler extends ExceptionHandler
 
         if ($exception instanceof MethodNotAllowedHttpException) {
             return $this->errorResponse('The specified method is not allowed', null, 405);
-        }
-
-        if ($exception instanceof AuthenticationException) {
-            return $this->unauthorizedResponse('Authentication required');
         }
 
         if ($exception instanceof AccessDeniedHttpException) {

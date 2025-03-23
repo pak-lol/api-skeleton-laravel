@@ -14,5 +14,6 @@ return [
     'user_updated_successfully' => 'Vartotojo informacija atnaujinta',
     'validation_failed' => 'Patikros klaida – patikrinkite įvestus duomenis',
     'resource_not_found' => 'Ieškomas resursas nerastas',
-    'rate_limit_exceeded' => 'Pernelyg daug užklausų. Bandykite vėliau'
+    'rate_limit_exceeded' => 'Pernelyg daug užklausų. Bandykite vėliau',
+    'language_updated_successfully' => 'Kalba sėkmingai atnaujinta'
 ];

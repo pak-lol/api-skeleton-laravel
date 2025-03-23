@@ -28,7 +28,7 @@ class TokenController extends Controller
     }
 
     /**
-     * Refresh a token.
+     * Refresh access token using a refresh token
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -43,17 +43,15 @@ class TokenController extends Controller
             return $this->validationErrorResponse($validator->errors()->toArray());
         }
 
-        $tokens = $this->tokenService->refreshAccessToken($request->refresh_token, $request);
+        try {
+            // Set flag to revoke previous tokens
+            $revokeOldTokens = true;
 
-        if (!$tokens) {
-            return $this->errorResponse('Invalid or expired refresh token', null, 401);
+            // Get response with new tokens and revoked old ones
+            $response = $this->tokenService->refreshToken($request->refresh_token, $revokeOldTokens);
+            return $this->successResponse($response, 'Token refreshed successfully');
+        } catch (\Exception $e) {
+            return $this->errorResponse($e->getMessage(), null, 401);
         }
-
-        return $this->successResponse([
-            'access_token' => $tokens['access_token'],
-            'token_type' => $tokens['token_type'],
-            'expires_in' => $tokens['expires_in'],
-            'refresh_token' => $tokens['refresh_token'],
-        ], 'Token refreshed successfully');
     }
 }

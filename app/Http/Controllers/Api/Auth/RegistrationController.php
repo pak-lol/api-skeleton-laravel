@@ -4,27 +4,32 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Services\TokenService;
 use App\Traits\ApiResponseTrait;
+use App\Services\TokenService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class RegistrationController extends Controller
 {
     use ApiResponseTrait;
 
+    /**
+     * The token service instance.
+     *
+     * @var TokenService
+     */
     protected $tokenService;
 
     /**
-     * Create a new AuthController instance.
+     * Create a new controller instance.
      *
      * @param TokenService $tokenService
+     * @return void
      */
-    public function __construct(TokenService $tokenService = null)
+    public function __construct(TokenService $tokenService)
     {
-        $this->tokenService = $tokenService ?? app(TokenService::class);
+        $this->tokenService = $tokenService;
     }
 
     /**
@@ -36,33 +41,33 @@ class RegistrationController extends Controller
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'username' => 'required|string|min:3|max:14|unique:users',
+            'username' => 'required|string|max:255|unique:users',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:6',
+            'password' => 'required|string|min:8',
         ]);
 
         if ($validator->fails()) {
             return $this->validationErrorResponse($validator->errors()->toArray());
         }
 
+        // Create user
         $user = User::create([
             'username' => $request->username,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'role' => 'user', // Default role
         ]);
 
-        // Create both access and refresh tokens
-        $tokens = $this->tokenService->createTokens($user, $request);
+        // Get device name or use a default
+        $deviceName = $request->device_name ?? $request->userAgent() ?? 'registration';
 
-        return $this->successResponse([
-            'user' => $user,
-            'access_token' => $tokens['access_token'],
-            'token_type' => $tokens['token_type'],
-            'expires_in' => $tokens['expires_in'],
-            'refresh_token' => $tokens['refresh_token'],
-        ], 'User created successfully');
+        // Generate tokens
+        $tokenResponse = $this->tokenService->createTokens($user, $deviceName);
+
+        // Return user with tokens
+        return $this->successResponse(
+            array_merge(['user' => $user], $tokenResponse),
+            'User registered successfully'
+        );
     }
-
-
-
 }

@@ -4,43 +4,46 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Services\TokenService;
 use App\Traits\ApiResponseTrait;
+use App\Services\TokenService;
+use App\Services\RateLimitService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Str;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Support\Facades\Hash;
 
 class LoginController extends Controller
 {
     use ApiResponseTrait;
 
+    /**
+     * The token service instance.
+     *
+     * @var TokenService
+     */
     protected $tokenService;
 
     /**
-     * Maximum number of failed attempts before lockout
+     * The rate limit service instance.
+     *
+     * @var RateLimitService
      */
-    protected const MAX_ATTEMPTS = 5;
+    protected $rateLimitService;
 
     /**
-     * Lockout duration in minutes
-     */
-    protected const LOCKOUT_TIME = 5;
-
-    /**
-     * Create a new AuthController instance.
+     * Create a new controller instance.
      *
      * @param TokenService $tokenService
+     * @param RateLimitService $rateLimitService
+     * @return void
      */
-    public function __construct(TokenService $tokenService = null)
+    public function __construct(TokenService $tokenService, RateLimitService $rateLimitService)
     {
-        $this->tokenService = $tokenService ?? app(TokenService::class);
+        $this->tokenService = $tokenService;
+        $this->rateLimitService = $rateLimitService;
     }
 
     /**
-     * Get a JWT via given credentials.
+     * Get a token via given credentials.
      *
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -51,8 +54,8 @@ class LoginController extends Controller
         $ipAddress = $request->ip();
 
         // Check if the IP is currently locked out
-        if ($this->isIpLocked($ipAddress)) {
-            $timeRemaining = $this->getTimeRemainingForLockout($ipAddress);
+        if ($this->rateLimitService->isIpLocked($ipAddress)) {
+            $timeRemaining = $this->rateLimitService->getTimeRemainingForLockout($ipAddress);
             return $this->errorResponse(
                 __('messages.too_many_attempts', ['minutes' => ceil($timeRemaining / 60)]),
                 null,
@@ -63,113 +66,50 @@ class LoginController extends Controller
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'password' => 'required|string',
+            'device_name' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
             // Increment failed attempts for validation errors related to invalid email format
             if (isset($validator->errors()->toArray()['email'])) {
-                $this->incrementFailedAttempts($ipAddress);
+                $this->rateLimitService->incrementFailedAttempts($ipAddress);
             }
             return $this->validationErrorResponse($validator->errors()->toArray());
         }
 
-        $credentials = $request->only('email', 'password');
+        // Find the user by email
+        $user = User::where('email', $request->email)->first();
 
-        if (! $token = JWTAuth::attempt($credentials)) {
+        // Check if user exists and credentials are correct
+        if (!$user || !Hash::check($request->password, $user->password)) {
             // Increment failed attempts for invalid credentials
-            $this->incrementFailedAttempts($ipAddress);
+            $this->rateLimitService->incrementFailedAttempts($ipAddress);
 
             return $this->errorResponse(
                 __('messages.auth_failed'),
-                ['attempts_remaining' => $this->getRemainingAttempts($ipAddress)],
+                ['attempts_remaining' => $this->rateLimitService->getRemainingAttempts($ipAddress)],
                 401
             );
         }
 
         // Reset failed attempts on successful login
-        $this->resetFailedAttempts($ipAddress);
+        $this->rateLimitService->resetFailedAttempts($ipAddress);
 
-        // Get user as an App\Models\User instance
-        $user = User::find(auth()->id());
+        // Get device name or use a default
+        $deviceName = $request->device_name ?? $request->userAgent() ?? 'unknown-device';
 
-        // revoke all existing refresh tokens
-        $this->tokenService->revokeAllTokens($user);
+        // delete all previous tokens
+        $user->tokens()->delete();
 
-        // Create both access and refresh tokens
-        $tokens = $this->tokenService->createTokens($user, $request);
+        // delete all previous refresh tokens
+        $user->refreshTokens()->delete();
 
-        return $this->successResponse([
-            'user' => $user,
-            'access_token' => $tokens['access_token'],
-            'token_type' => $tokens['token_type'],
-            'expires_in' => $tokens['expires_in'],
-            'refresh_token' => $tokens['refresh_token'],
-        ], 'Login successful');
-    }
+        // Generate tokens
+        $tokenResponse = $this->tokenService->createTokens($user, $deviceName);
 
-    /**
-     * Check if the IP address is currently locked out
-     *
-     * @param string $ipAddress
-     * @return bool
-     */
-    protected function isIpLocked($ipAddress)
-    {
-        return RateLimiter::tooManyAttempts($this->getLimiterKey($ipAddress), self::MAX_ATTEMPTS);
-    }
-
-    /**
-     * Get the rate limiter key for the given IP address
-     *
-     * @param string $ipAddress
-     * @return string
-     */
-    protected function getLimiterKey($ipAddress)
-    {
-        return 'login:' . $ipAddress;
-    }
-
-    /**
-     * Increment the failed login attempts for the IP address
-     *
-     * @param string $ipAddress
-     * @return void
-     */
-    protected function incrementFailedAttempts($ipAddress)
-    {
-        RateLimiter::hit($this->getLimiterKey($ipAddress), 60 * self::LOCKOUT_TIME);
-    }
-
-    /**
-     * Reset the failed login attempts for the IP address
-     *
-     * @param string $ipAddress
-     * @return void
-     */
-    protected function resetFailedAttempts($ipAddress)
-    {
-        RateLimiter::clear($this->getLimiterKey($ipAddress));
-    }
-
-    /**
-     * Get the remaining attempts allowed before lockout
-     *
-     * @param string $ipAddress
-     * @return int
-     */
-    protected function getRemainingAttempts($ipAddress)
-    {
-        return RateLimiter::remaining($this->getLimiterKey($ipAddress), self::MAX_ATTEMPTS);
-    }
-
-    /**
-     * Get the time remaining (in seconds) for the lockout to expire
-     *
-     * @param string $ipAddress
-     * @return int
-     */
-    protected function getTimeRemainingForLockout($ipAddress)
-    {
-        return RateLimiter::availableIn($this->getLimiterKey($ipAddress));
+        return $this->successResponse(
+            array_merge(['user' => $user], $tokenResponse),
+            'Login successful'
+        );
     }
 }
